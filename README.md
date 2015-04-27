@@ -3,6 +3,11 @@ Hash Filter File System
 
 A simple file system to filter out files with known hash values.
 
+Dependencies:
+python
+FUSE
+python-fuse
+
 Usage:
 python hffs.py mountpoint -o rootDir=PATH -o hashFile=FILE
 
