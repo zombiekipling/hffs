@@ -19,16 +19,13 @@ class HFFS(Fuse):
         self.rootDir = ""
         self.hashFile= ""
         self.hashList = {}
-        self.fileRecords = {}
 
     def main(self, *a, **kw):
         if self.fuse_args.mount_expected():
-            print "rootDir = " + self.rootDir
             self.rootDir = os.path.abspath(self.rootDir)
-            print "rootDir = " + self.rootDir
             for line in open(self.hashFile):
                 words = string.split(line)
-                self.hashList[words[0]] = words[1]
+                self.hashList[words[1]] = (words[0], False, True)
         return Fuse.main(self, *a, **kw)
 
     def generateHash(self, path):
@@ -46,20 +43,21 @@ class HFFS(Fuse):
             rootPath = self.rootDir + path
             match = False
             if os.path.isfile(rootPath):
-                if path in self.fileRecords:
-                    print("Seen path " + path + " before:")
-                    print(self.fileRecords[path])
-                    match = self.fileRecords[path][1]
+                if rootPath in self.hashList:
+                    hashListEntry = self.hashList[rootPath]
+                    if hashListEntry[1] == True:
+                        print("Seen path " + path + " before:")
+                        print(hashListEntry)
+                        match = hashListEntry[2]
+                    else:
+                        print("Not checked " + path + " before:")
+                        fileHash = self.generateHash(rootPath)
+                        if hashListEntry[0] == fileHash:
+                            match = True
+                        self.hashList[rootPath] = (hashListEntry[0], True, match)
+                        print(hashListEntry)
                 else:
-                    print("Not seen path " + path + " before:")
-                    fileHash = self.generateHash(rootPath)
-                    if fileHash in self.hashList:
-                        print("hashList value = " + self.hashList[fileHash])
-                        print("rootPath = " + rootPath)
-                    if fileHash in self.hashList and self.hashList[fileHash] == rootPath:
-                        match=True
-                    self.fileRecords[path] = (fileHash, match)
-                    print(self.fileRecords[path])
+                    print("Unknown path " + path)
             return match
         except IOError as e:
             if e.errno == errno.EACCES:
