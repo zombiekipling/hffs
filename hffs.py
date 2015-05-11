@@ -13,19 +13,38 @@ fuse.fuse_python_api = (0, 2)
 fuse.feature_assert('has_init')
 
 class HFFS(Fuse):
-
+    '''
+    There are two name-hash mappings:
+    1. The cached actual files and hashes ("cache")
+    2. The inputted hash list ("hash list")
+    
+    We want to check the status of the actual files in the cache and return the result (in/out) if found.
+    Otherwise, hash the file and attempt to match the file name/path if the hash is in the hash list.
+    
+    The cache is an actual file path to filter status mapping. File paths are unique, so this can be a straight mapping.
+    The hash list is a hash to file path mapping. Hashes are necessarily unique, so we'll need the file paths in a list.
+    '''
     def __init__(self, *args, **kw):
         Fuse.__init__(self, *args, **kw)
         self.rootDir = ""
         self.hashFile= ""
         self.hashList = {}
+        self.cache = {}
 
     def main(self, *a, **kw):
         if self.fuse_args.mount_expected():
             self.rootDir = os.path.abspath(self.rootDir)
             for line in open(self.hashFile):
                 words = string.split(line)
-                self.hashList[words[1]] = (words[0], False, True)
+                fileHash = words[0]
+                filePath = words[1]
+                print("Adding: " + words[0] + ":" + words[1])
+                if fileHash in self.hashList:
+                    pathList = self.hashList[fileHash]
+                    pathList.append(fileHash)
+                    self.hashList[fileHash] = pathList
+                else:
+                    self.hashList[fileHash] = [filePath]
         return Fuse.main(self, *a, **kw)
 
     def generateHash(self, path):
@@ -37,27 +56,34 @@ class HFFS(Fuse):
                 hashFunc.update(dataBuffer)
                 dataBuffer = f.read(blockSize)
         return hashFunc.hexdigest()
+    
+    def pathStringMatches(self, cachePath, hashListPath):
+        # TODO: different matching options
+        if cachePath == hashListPath:
+            return True
+        else:
+            return False
 
     def matches(self, path):
         try:
             rootPath = self.rootDir + path
             match = False
             if os.path.isfile(rootPath):
-                if rootPath in self.hashList:
-                    hashListEntry = self.hashList[rootPath]
-                    if hashListEntry[1] == True:
-                        print("Seen path " + path + " before:")
-                        print(hashListEntry)
-                        match = hashListEntry[2]
-                    else:
-                        print("Not checked " + path + " before:")
-                        fileHash = self.generateHash(rootPath)
-                        if hashListEntry[0] == fileHash:
-                            match = True
-                        self.hashList[rootPath] = (hashListEntry[0], True, match)
-                        print(hashListEntry)
+                if rootPath in self.cache:
+                    match = self.cache[rootPath]
+                    print("Seen path " + path + " before:")
+                    print(match)
                 else:
-                    print("Unknown path " + path)
+                    print("Not checked " + path + " before:")
+                    fileHash = self.generateHash(rootPath)
+                    if fileHash in self.hashList:
+                        pathList = self.hashList[fileHash]
+                        for hashListPath in pathList:
+                            if self.pathStringMatches(rootPath, hashListPath):
+                                match = True
+                                break
+                    self.cache[rootPath] = match
+                    print(match)
             return match
         except IOError as e:
             if e.errno == errno.EACCES:
@@ -126,9 +152,11 @@ def main():
                  dash_s_do='setsingle')
     filesystem.multithreaded = False
     filesystem.parser.add_option(mountopt="rootDir", metavar="PATH", default="/",
-                             help="Filter filesystem from PATH [default: %default]")
+        help="Filter filesystem from PATH [default: %default]")
     filesystem.parser.add_option(mountopt="hashFile", metavar="FILE", default="hashFile.txt",
-                             help="Hash list file containing files to filter out in hash<whitespace>path format [default: %default]")
+        help="Hash list file containing files to filter out in hash<whitespace>path format [default: %default]")
+    filesystem.parser.add_option(mountopt="matchtype", metavar="TYPE", default="file",
+        help="Matching mode for path component (""none"", ""file"", ""partialpath"" or ""fullpath"")")
     filesystem.parse(values=filesystem, errex=1)
 
     filesystem.main()
