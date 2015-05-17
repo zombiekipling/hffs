@@ -39,14 +39,12 @@ class HFFS(Fuse):
                 words = string.split(line)
                 fileHash = words[0]
                 filePath = words[1]
-                print("Adding: " + words[0] + ":" + words[1])
                 if fileHash in self.hashList:
                     pathList = self.hashList[fileHash]
                     pathList.append(filePath)
                     self.hashList[fileHash] = pathList
                 else:
                     self.hashList[fileHash] = [filePath]
-        print(self.hashList)
         return Fuse.main(self, *a, **kw)
 
     def generateHash(self, path):
