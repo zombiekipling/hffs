@@ -30,6 +30,7 @@ class HFFS(Fuse):
         self.hashFile= ""
         self.hashList = {}
         self.cache = {}
+        self.matchType = "file"
 
     def main(self, *a, **kw):
         if self.fuse_args.mount_expected():
@@ -41,10 +42,11 @@ class HFFS(Fuse):
                 print("Adding: " + words[0] + ":" + words[1])
                 if fileHash in self.hashList:
                     pathList = self.hashList[fileHash]
-                    pathList.append(fileHash)
+                    pathList.append(filePath)
                     self.hashList[fileHash] = pathList
                 else:
                     self.hashList[fileHash] = [filePath]
+        print(self.hashList)
         return Fuse.main(self, *a, **kw)
 
     def generateHash(self, path):
@@ -58,11 +60,19 @@ class HFFS(Fuse):
         return hashFunc.hexdigest()
     
     def pathStringMatches(self, cachePath, hashListPath):
-        # TODO: different matching options
-        if cachePath == hashListPath:
+        if self.matchType == "none":
             return True
+        elif self.matchType == "fullPath":
+            if cachePath == hashListPath:
+                return True
+            else:
+                return False
         else:
-            return False
+            # "file"
+            if os.path.basename(cachePath) == os.path.basename(hashListPath):
+                return True
+            else:
+                return False
 
     def matches(self, path):
         try:
@@ -77,8 +87,10 @@ class HFFS(Fuse):
                     print("Not checked " + path + " before:")
                     fileHash = self.generateHash(rootPath)
                     if fileHash in self.hashList:
+                        print("Hash in hash list")
                         pathList = self.hashList[fileHash]
                         for hashListPath in pathList:
+                            print("Compare against: " + hashListPath)
                             if self.pathStringMatches(rootPath, hashListPath):
                                 match = True
                                 break
@@ -155,8 +167,8 @@ def main():
         help="Filter filesystem from PATH [default: %default]")
     filesystem.parser.add_option(mountopt="hashFile", metavar="FILE", default="hashFile.txt",
         help="Hash list file containing files to filter out in hash<whitespace>path format [default: %default]")
-    filesystem.parser.add_option(mountopt="matchtype", metavar="TYPE", default="file",
-        help="Matching mode for path component (""none"", ""file"", ""partialpath"" or ""fullpath"")")
+    filesystem.parser.add_option(mountopt="matchType", metavar="TYPE", default="file",
+        help="Matching mode for path component (""none"", ""file"" or ""fullPath"")")
     filesystem.parse(values=filesystem, errex=1)
 
     filesystem.main()
