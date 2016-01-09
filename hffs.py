@@ -1,18 +1,14 @@
 #!/usr/bin/env python
 
-import sys
+from sys import argv
 import os
 import string
 import hashlib
 import errno
 
-import fuse
-from fuse import Fuse
+from fuse import FUSE, FuseOSError, Operations
 
-fuse.fuse_python_api = (0, 2)
-fuse.feature_assert('has_init')
-
-class HFFS(Fuse):
+class HFFS(Operations):
     '''
     There are two name-hash mappings:
     1. The cached actual files and hashes ("cache")
@@ -22,30 +18,25 @@ class HFFS(Fuse):
     Otherwise, hash the file and attempt to match the file name/path if the hash is in the hash list.
     
     The cache is an actual file path to filter status mapping. File paths are unique, so this can be a straight mapping.
-    The hash list is a hash to file path mapping. Hashes are necessarily unique, so we'll need the file paths in a list.
+    The hash list is a hash to file path mapping. Hashes aren't necessarily unique, so we'll need the file paths in a list.
     '''
-    def __init__(self, *args, **kw):
-        Fuse.__init__(self, *args, **kw)
-        self.rootDir = ""
-        self.hashFile= ""
+    def __init__(self, rootDir, hashFile, matchType):
+        self.rootDir = os.path.abspath(rootDir)
+        self.hashFile = hashFile
         self.hashList = {}
         self.cache = {}
-        self.matchType = "file"
-
-    def main(self, *a, **kw):
-        if self.fuse_args.mount_expected():
-            self.rootDir = os.path.abspath(self.rootDir)
-            for line in open(self.hashFile):
-                words = string.split(line)
-                fileHash = words[0]
-                filePath = words[1]
-                if fileHash in self.hashList:
-                    pathList = self.hashList[fileHash]
-                    pathList.append(filePath)
-                    self.hashList[fileHash] = pathList
-                else:
-                    self.hashList[fileHash] = [filePath]
-        return Fuse.main(self, *a, **kw)
+        self.matchType = matchType
+        
+        for line in open(self.hashFile):
+            words = string.split(line)
+            fileHash = words[0]
+            filePath = words[1]
+            if fileHash in self.hashList:
+                pathList = self.hashList[fileHash]
+                pathList.append(filePath)
+                self.hashList[fileHash] = pathList
+            else:
+                self.hashList[fileHash] = [filePath]
 
     def generateHash(self, path):
         blockSize = 32 * 1024 * 1024
@@ -79,10 +70,10 @@ class HFFS(Fuse):
             if os.path.isfile(rootPath):
                 if rootPath in self.cache:
                     match = self.cache[rootPath]
-                    print("Seen path " + path + " before:")
+                    print("Seen path " + path + " before. Match:")
                     print(match)
                 else:
-                    print("Not checked " + path + " before:")
+                    print("Not checked " + path + " before. Match:")
                     fileHash = self.generateHash(rootPath)
                     if fileHash in self.hashList:
                         print("Hash in hash list")
@@ -97,14 +88,16 @@ class HFFS(Fuse):
             return match
         except IOError as e:
             if e.errno == errno.EACCES:
+                print("Access denied")
                 return False
             raise
 
-    def getattr(self, path):
+    def getattr(self, path, fh=None):
         if self.matches(path):
             return -errno.ENOENT
         else:
-            return os.lstat(self.rootDir + path)
+            stats = os.lstat(self.rootDir + path)
+            return dict((key, getattr(stats, key)) for key in ('st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
 
     def open(self, path, flags):
         print("open: " + path)
@@ -113,22 +106,28 @@ class HFFS(Fuse):
         else:
             return os.open(self.rootDir + path, flags)
 
-    def read(self, path, size, offset):
+    def read(self, path, length, offset, fh):
+        print("read: " + path)
         if self.matches(path):
             return -errno.ENOENT
         else:
-            return os.read(self.rootDir + path, size, offset)
+            os.lseek(fh, offset, os.SEEK_SET)
+            return os.read(fh, length)
 
-    def readdir(self, path, offset):
+    def readdir(self, path, fh):
         print("readdir: " + path)
         if path[-1:] != "/":
             path = path + "/"
         for fileName in os.listdir(self.rootDir + path):
             if self.matches(path + fileName) == False:
-                yield fuse.Direntry(fileName)
+                yield fileName
 
     def readlink(self, path):
         return os.readlink(self.rootDir + path)
+    
+    def release(self, path, fh):
+        print("release: " + path)
+        return os.close(fh)
     
     # All writes fail
     def chmod(self, path, mode):
@@ -154,22 +153,10 @@ class HFFS(Fuse):
     
     def unlink(self, path):
         return -errno.EROFS
-    
-def main():
-    usage = "Hash Filter File System\n" + Fuse.fusage
-    filesystem = HFFS(version="%prog " + fuse.__version__,
-                 usage=usage,
-                 dash_s_do='setsingle')
-    filesystem.multithreaded = False
-    filesystem.parser.add_option(mountopt="rootDir", metavar="PATH", default="/",
-        help="Filter filesystem from PATH [default: %default]")
-    filesystem.parser.add_option(mountopt="hashFile", metavar="FILE", default="hashFile.txt",
-        help="Hash list file containing files to filter out in hash<whitespace>path format [default: %default]")
-    filesystem.parser.add_option(mountopt="matchType", metavar="TYPE", default="file",
-        help="Matching mode for path component (""none"", ""file"" or ""fullPath"")")
-    filesystem.parse(values=filesystem, errex=1)
-
-    filesystem.main()
 
 if __name__ == '__main__':
-    main()
+    if len(argv) != 5:
+        print("usage: %s <rootDir> <hashFile> <matchType> <mountpoint>" % argv[0])
+        exit(1)
+    fuse = FUSE(HFFS(argv[1], argv[2], argv[3]), argv[4], foreground=True, nothreads=True)
+
