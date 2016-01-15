@@ -31,6 +31,13 @@ class HFFS(Operations):
             words = string.split(line)
             fileHash = words[0]
             filePath = words[1]
+            
+            while filePath[0:1] == "./":
+                filePath = filePath[2:]
+            
+            if filePath[0] != "/":
+                filePath = "/" + filePath
+            
             if fileHash in self.hashList:
                 pathList = self.hashList[fileHash]
                 pathList.append(filePath)
@@ -68,8 +75,8 @@ class HFFS(Operations):
             rootPath = self.rootDir + path
             match = False
             if os.path.isfile(rootPath):
-                if rootPath in self.cache:
-                    match = self.cache[rootPath]
+                if path in self.cache:
+                    match = self.cache[path]
                     print("Seen path " + path + " before. Match:")
                     print(match)
                 else:
@@ -80,21 +87,22 @@ class HFFS(Operations):
                         pathList = self.hashList[fileHash]
                         for hashListPath in pathList:
                             print("Compare against: " + hashListPath)
-                            if self.pathStringMatches(rootPath, hashListPath):
+                            if self.pathStringMatches(path, hashListPath):
                                 match = True
                                 break
-                    self.cache[rootPath] = match
+                    self.cache[path] = match
                     print(match)
             return match
         except IOError as e:
             if e.errno == errno.EACCES:
                 print("Access denied")
                 return False
-            raise
+            raise FuseOSError(e.errno)
 
     def getattr(self, path, fh=None):
+        print("getattr: " + path)
         if self.matches(path):
-            return -errno.ENOENT
+            raise FuseOSError(ENOENT)
         else:
             stats = os.lstat(self.rootDir + path)
             return dict((key, getattr(stats, key)) for key in ('st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
@@ -102,14 +110,14 @@ class HFFS(Operations):
     def open(self, path, flags):
         print("open: " + path)
         if self.matches(path):
-            return -errno.ENOENT
+            raise FuseOSError(ENOENT)
         else:
             return os.open(self.rootDir + path, flags)
 
     def read(self, path, length, offset, fh):
         print("read: " + path)
         if self.matches(path):
-            return -errno.ENOENT
+            raise FuseOSError(ENOENT)
         else:
             os.lseek(fh, offset, os.SEEK_SET)
             return os.read(fh, length)
@@ -156,7 +164,7 @@ class HFFS(Operations):
 
 if __name__ == '__main__':
     if len(argv) != 5:
-        print("usage: %s <rootDir> <hashFile> <matchType> <mountpoint>" % argv[0])
+        print("usage: %s <rootDir> <hashFile> <matchType[none|file|fullPath]> <mountpoint>" % argv[0])
         exit(1)
     fuse = FUSE(HFFS(argv[1], argv[2], argv[3]), argv[4], foreground=True, nothreads=True)
 
