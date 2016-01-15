@@ -9,13 +9,11 @@ Dependencies
 
 * python
 * FUSE
-* python-fuse
+* [fusepy](https://github.com/terencehonles/fusepy)
 
 Usage
 -----
-`python hffs.py mountpoint -o rootDir=PATH -o hashFile=FILE -o matchType=TYPE`
-
-`mountpoint` is the filtered output mount point.
+`python hffs.py rootDir hashFile matchType mountpoint`
 
 `rootDir` is directory to be filtered.
 
@@ -26,3 +24,5 @@ Usage
 * `none`: Don't consider the file name/path at all, i.e. only the hash.
 * `file`: Only compare the file's name, not the path.
 * `fullPath`: Compare the file's full path within `rootDir` to the full string in the hash file.
+
+`mountpoint` is the filtered output mount point.
