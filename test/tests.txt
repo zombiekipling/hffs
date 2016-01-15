@@ -1,0 +1,26 @@
+#Test case	Match type	Hash match	Filename match	Dir match	Result
+1	none	false	false	false	not
+2	none	false	false	true	not
+3	none	false	true	false	not
+4	none	false	true	true	not
+5	none	true	false	false	filtered
+6	none	true	false	true	filtered
+7	none	true	true	false	filtered
+8	none	true	true	true	filtered
+9	file	false	false	false	not
+10	file	false	false	true	not
+11	file	false	true	false	not
+12	file	false	true	true	not
+13	file	true	false	false	not
+14	file	true	false	true	not
+15	file	true	true	false	filtered
+16	file	true	true	true	filtered
+17	fullPath	false	false	false	not
+18	fullPath	false	false	true	not
+19	fullPath	false	true	false	not
+20	fullPath	false	true	true	not
+21	fullPath	true	false	false	not
+22	fullPath	true	false	true	not
+23	fullPath	true	true	false	not
+24	fullPath	true	true	true	filtered
+
